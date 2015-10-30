@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
 #
-# Generates a sitemap of the provided URL
+# Walks every page that it can find in a website
 #
 # It's an excuse to play with BeautifulSoup
 
@@ -29,11 +28,12 @@ class PageFetcher():
 
         if ':' in header:
             #split out the headers name and value
-            n, v = header.split(':', 1)
-            self.headers[n] = v
+            n, v = header.split(': ', 1)
+            self.headers[n] = v.rstrip('\r\n')
         elif 'HTTP' in header:
-            h, self.code, self.status = header.split(' ', 2)
-            self.code = int(self.code)
+            h, code, status = header.split(' ', 2)
+            self.code = int(code)
+            self.status = status.rstrip('\r\n')
 
     def encoding(self):
         """Gets the encoding from the headers, otherwise assumes iso-8859-1"""
@@ -66,8 +66,7 @@ class PageFetcher():
 class Spider:
     """Fetches every page within a website"""
     def __init__(self):
-        self.processed = None
-        self.queued = Queue()
+        pass
 
     def walk(self, url):
         """Walks all pages in the given website"""
@@ -75,21 +74,28 @@ class Spider:
             url = 'http://' + url
 
         fetch = PageFetcher()
-        self.queued.put(url)
-        self.processed = set()
+        queued = Queue()
+        queued.put(url)
+        processed = set()
 
-        while not self.queued.empty():
-            url = self.queued.get()
-            if url not in self.processed:
-                self.processed.add(url)
+        while not queued.empty():
+            url = queued.get()
+            if url not in processed:
+                processed.add(url)
                 code, headers, body = fetch.fetch(url)
+
+                if code >= 300 and code <= 399 and 'Location' in headers:
+                    locpart = urlsplit(headers['Location'])
+                    urlpart = urlsplit(url)
+                    if locpart.scheme == urlpart.scheme and locpart.netloc == urlpart.netloc:
+                        queued.put(headers['Location'])
 
                 #parse out the links if it's a html page
                 if 'Content-Type' in headers and 'text/html' in headers['Content-Type']:
                     links = self.sitelinks(body, url)
 
                     for l in links:
-                        self.queued.put(l)
+                        queued.put(l)
 
                 #pass the page onto the processor
                 self.process_page(url, code, headers, body)
@@ -113,7 +119,7 @@ class Spider:
 
                 if linkpart[0] == urlpart.scheme and linkpart[1] == urlpart.netloc:
                     if linkpart[2].startswith('/'):
-                        links.add(urlunsplit(linkpart).rstrip('/'))
+                        links.add(urlunsplit(linkpart))
                     elif linkpart[2] != '':
                         #relative URL.
                         links.add(urljoin(url, linkpart[2]))
@@ -125,10 +131,3 @@ class Spider:
     def process_page(self, url, code, headers, body):
         '''Does things with the retrieved page'''
         pass
-
-if __name__ == "__main__":
-    from pprint import pprint
-    spider = Spider()
-    spider.walk('http://nada-labs.net')
-
-    pprint(spider.processed)
