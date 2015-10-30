@@ -4,14 +4,16 @@
 #
 # It's an excuse to play with BeautifulSoup
 
-import urllib
 import re
 from io import BytesIO
 from bs4 import BeautifulSoup
 from pycurl import Curl
+from queue import Queue, Empty as QueueEmpty
+from urllib.parse import urlsplit, urlunsplit, urljoin
+from sys import stdout
 
 class PageFetcher():
-    """Fetches a page and parses it for links"""
+    """Fetches a page"""
 
     def __init__(self):
         self.curl = Curl()
@@ -41,8 +43,8 @@ class PageFetcher():
                 return match.group(1)
         return 'iso-8859-1'
 
-    def getlinks(self, url):
-        """Gets the specified webpage and returns any links found in it"""
+    def fetch(self, url):
+        """Gets the specified webpage"""
         #reset the gathered data
         self.headers = {}
         self.code = 0
@@ -57,18 +59,76 @@ class PageFetcher():
         self.curl.setopt(self.curl.HEADERFUNCTION, self.handle_headers)
         self.curl.perform()
 
-        #parse for anchor tags
+        #decode the returned data to the correct type
         body = buff.getvalue().decode(self.encoding())
-        bs = BeautifulSoup(body)
+        return self.code, self.headers, body
 
-        for anchor in bs.find_all('a'):
-            links.append(anchor['href'])
+class Spider:
+    """Fetches every page within a website"""
+    def __init__(self):
+        self.processed = None
+        self.queued = Queue()
+
+    def walk(self, url):
+        """Walks all pages in the given website"""
+        if not url.startswith('http'):
+            url = 'http://' + url
+
+        fetch = PageFetcher()
+        self.queued.put(url)
+        self.processed = set()
+
+        while not self.queued.empty():
+            url = self.queued.get()
+            if url not in self.processed:
+                self.processed.add(url)
+                code, headers, body = fetch.fetch(url)
+
+                #parse out the links if it's a html page
+                if 'Content-Type' in headers and 'text/html' in headers['Content-Type']:
+                    links = self.sitelinks(body, url)
+
+                    for l in links:
+                        self.queued.put(l)
+
+                #pass the page onto the processor
+                self.process_page(url, code, headers, body)
+
+    def sitelinks(self, html_page, url):
+        """Finds all links in the provided html page"""
+        bs = BeautifulSoup(html_page)
+        links = set()
+        urlpart = urlsplit(url)
+
+        try:
+            for anchor in bs.find_all('a'):
+                linkpart = list(urlsplit(anchor['href']))
+                linkpart[4] = '' #remove the fragment
+
+                if linkpart[0] == '':
+                    linkpart[0] = urlpart.scheme
+
+                if linkpart[1] == '':
+                    linkpart[1] = urlpart.netloc
+
+                if linkpart[0] == urlpart.scheme and linkpart[1] == urlpart.netloc:
+                    if linkpart[2].startswith('/'):
+                        links.add(urlunsplit(linkpart).rstrip('/'))
+                    elif linkpart[2] != '':
+                        #relative URL.
+                        links.add(urljoin(url, linkpart[2]))
+        except KeyError:
+            pass
 
         return links
 
+    def process_page(self, url, code, headers, body):
+        '''Does things with the retrieved page'''
+        pass
+
 if __name__ == "__main__":
     from pprint import pprint
-    fetch = PageFetcher()
-    links = fetch.getlinks('http://nada-labs.net')
+    spider = Spider()
+    spider.walk('http://nada-labs.net')
 
-    pprint(links)
+    pprint(spider.processed)
