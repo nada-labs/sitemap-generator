@@ -14,11 +14,12 @@ spinny = ['-', '\\', '|', '/']
 
 class Sitemap(Spider):
     def __init__(self):
+        super().__init__()
         self.pageinfo = {}
         self.errors = []
 
     def process_page(self, url, code, headers, body):
-        if code == 200:
+        if code == 200 and self.ishtml(headers):    #don't index non-html pages
             lastmod = ''
             pri = 1.0
             change = 'monthly'

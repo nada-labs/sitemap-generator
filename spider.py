@@ -66,6 +66,7 @@ class PageFetcher():
 class Spider:
     """Fetches every page within a website"""
     def __init__(self):
+        self.htmlpage = re.compile('text/(html|xml)|application/(xhtml\+xml|xml)')
         pass
 
     def walk(self, url):
@@ -91,7 +92,7 @@ class Spider:
                         queued.put(headers['Location'])
 
                 #parse out the links if it's a html page
-                if 'Content-Type' in headers and 'text/html' in headers['Content-Type']:
+                if self.ishtml(headers):
                     links = self.sitelinks(body, url)
 
                     for l in links:
@@ -99,6 +100,12 @@ class Spider:
 
                 #pass the page onto the processor
                 self.process_page(url, code, headers, body)
+
+    def ishtml(self, headers):
+        '''Determines if the retrieved page is a (x)html page'''
+        if 'Content-Type' in headers and self.htmlpage.search(headers['Content-Type']):
+            return True
+        return False
 
     def sitelinks(self, html_page, url):
         """Finds all links in the provided html page"""
