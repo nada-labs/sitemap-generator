@@ -19,7 +19,7 @@ class Sitemap(Spider):
         self.errors = []
 
     def process_page(self, url, code, headers, body):
-        if code == 200 and self.ishtml(headers):    #don't index non-html pages
+        if code == 200:
             lastmod = ''
             pri = 1.0
             change = 'monthly'
@@ -54,7 +54,7 @@ class Sitemap(Spider):
         self.pageinfo = {}
         self.errors = []
 
-        Spider.walk(self, url)
+        Spider.walk(self, url, self.iswebpage)
 
         print("\r[ ] Processed %i urls" % (len(self.pageinfo)))
 
@@ -78,6 +78,10 @@ class Sitemap(Spider):
             print("[!] The following pages produced errors:")
             for e in self.errors:
                 print("    %i %s" % (e[1], e[0]))
+
+    def iswebpage(self, code, headers):
+        '''Determine if the provided headers indicate a webpage'''
+        return self.ishtml(headers)
 
 if __name__ == '__main__':
     from sys import argv

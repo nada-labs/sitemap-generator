@@ -43,7 +43,7 @@ class PageFetcher():
                 return match.group(1)
         return 'iso-8859-1'
 
-    def fetch(self, url):
+    def fetch(self, url, headers_only=False):
         """Gets the specified webpage"""
         #reset the gathered data
         self.headers = {}
@@ -55,6 +55,10 @@ class PageFetcher():
         #get the page
         buff = BytesIO()
         self.curl.setopt(self.curl.URL, url)
+        if headers_only:
+            self.curl.setopt(self.curl.NOBODY, 1)
+        else:
+            self.curl.setopt(self.curl.NOBODY, 0)
         self.curl.setopt(self.curl.WRITEDATA, buff)
         self.curl.setopt(self.curl.HEADERFUNCTION, self.handle_headers)
         self.curl.perform()
@@ -67,9 +71,8 @@ class Spider:
     """Fetches every page within a website"""
     def __init__(self):
         self.htmlpage = re.compile('text/(html|xml)|application/(xhtml\+xml|xml)')
-        pass
 
-    def walk(self, url):
+    def walk(self, url, pagefilter = None):
         """Walks all pages in the given website"""
         if not url.startswith('http'):
             url = 'http://' + url
@@ -82,8 +85,9 @@ class Spider:
         while not queued.empty():
             url = queued.get()
             if url not in processed:
+                have_body = False
                 processed.add(url)
-                code, headers, body = fetch.fetch(url)
+                code, headers, body = fetch.fetch(url, True) #only get headers
 
                 if code >= 300 and code <= 399 and 'Location' in headers:
                     locpart = urlsplit(headers['Location'])
@@ -93,13 +97,18 @@ class Spider:
 
                 #parse out the links if it's a html page
                 if self.ishtml(headers):
+                    code, headers, body = fetch.fetch(url) #get the whole page
+                    have_body = True
                     links = self.sitelinks(body, url)
 
                     for l in links:
                         queued.put(l)
 
-                #pass the page onto the processor
-                self.process_page(url, code, headers, body)
+                #pass the page onto the processor, if it passes the defined filter
+                if not pagefilter or (pagefilter and pagefilter(code, headers)):
+                    if not have_body:
+                        code, headers, body = fetch.fetch(url) #get the whole page
+                    self.process_page(url, code, headers, body)
 
     def ishtml(self, headers):
         '''Determines if the retrieved page is a (x)html page'''
